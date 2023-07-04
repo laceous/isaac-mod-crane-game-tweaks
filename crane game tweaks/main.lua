@@ -2,6 +2,7 @@ local mod = RegisterMod('Crane Game Tweaks', 1)
 local json = require('json')
 local game = Game()
 
+mod.onGameStartHasRun = false
 mod.craneGame = 16
 mod.rngShiftIdx = 35
 
@@ -75,6 +76,9 @@ function mod:onGameStart(isContinue)
       end
     end
   end
+  
+  mod.onGameStartHasRun = true
+  mod:onNewRoom()
 end
 
 function mod:onGameExit(shouldSave)
@@ -85,6 +89,8 @@ function mod:onGameExit(shouldSave)
     mod:clearCraneItems()
     mod:save()
   end
+  
+  mod.onGameStartHasRun = false
 end
 
 function mod:save(settingsOnly)
@@ -121,6 +127,10 @@ end
 -- not using MC_PRE_ROOM_ENTITY_SPAWN because it doesn't work with custom stage api rooms
 -- not using MC_PRE_ENTITY_SPAWN because allowing the option to change percentages along with re-entering rooms leads to inconsistent behavior
 function mod:onNewRoom()
+  if not mod.onGameStartHasRun then
+    return
+  end
+  
   local room = game:GetRoom()
   
   if room:IsFirstVisit() then

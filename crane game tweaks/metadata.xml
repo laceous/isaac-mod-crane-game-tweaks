@@ -19,7 +19,7 @@ This mod also supports:
 Mod Config Menu is required to change your settings.
 
 Finally, there's an option to enable re-rolling crane game items (as long as the machine is idle). The D6 and Eternal D6 are both supported (as are any other items that call these, like: D100, Perthro, Restock Machine, etc). The Eternal D6 has a 25% chance to break the machine. The only way to re-roll these items is to completely replace the machine. This resets the internal counter which normally limits you to 3 items. Due to this change in behavior, re-rolling is disabled by default.</description>
-    <version>1.2</version>
+    <version>1.3</version>
     <visibility>Public</visibility>
     <tag id="Lua"/>
     <tag id="Tweaks"/>
