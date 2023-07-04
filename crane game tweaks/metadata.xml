@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<metadata>
+    <name>Crane Game Tweaks</name>
+    <directory>crane game tweaks</directory>
+    <id>2998779374</id>
+    <description>Every time I see a crane game, I wonder why you can't bomb it to get the item inside. Well, now you can can.
+
+Blowing up the crane game will give you a 25% chance to get the item (which is the same as paying 5c). The item has a 25% chance to be glitched if obtained this way.
+
+The API for slot machines isn't the greatest so there could be conflicts with other mods. The method used here is similar to how External Item Descriptions works. As long as EID shows the correct item then this mod should work too.
+
+This mod also supports:
+[list]
+    [*]Changing the percentages
+    [*]Changing the item pool type for crane games
+    [*]Replacing slot machines, fortune telling machines, and shell games with crane games
+[/list]
+
+Mod Config Menu is required to change your settings.
+
+Finally, there's an option to enable re-rolling crane game items (as long as the machine is idle). The D6 and Eternal D6 are both supported (as are any other items that call these, like: D100, Perthro, Restock Machine, etc). The Eternal D6 has a 25% chance to break the machine. The only way to re-roll these items is to completely replace the machine. This resets the internal counter which normally limits you to 3 items. Due to this change in behavior, re-rolling is disabled by default.</description>
+    <version>1.1</version>
+    <visibility>Public</visibility>
+    <tag id="Lua"/>
+    <tag id="Tweaks"/>
+</metadata>
