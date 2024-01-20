@@ -3,7 +3,10 @@ local json = require('json')
 local game = Game()
 
 mod.onGameStartHasRun = false
-mod.craneGame = 16
+mod.slotMachineVariant = 1
+mod.fortuneTellingVariant = 3
+mod.shellGameVariant = 6
+mod.craneGameVariant = 16
 mod.rngShiftIdx = 35
 
 mod.itemPoolTypes = {
@@ -138,18 +141,46 @@ function mod:onNewRoom()
       local rng = RNG()
       rng:SetSeed(slot.InitSeed, mod.rngShiftIdx)
       
-      if slot.Variant == 1 then -- slot machine
+      if slot.Variant == mod.slotMachineVariant then
         if rng:RandomInt(100) < mod.state.slotPercent then
-          mod:replaceSlot(slot, mod.craneGame, slot.InitSeed, false)
+          mod:replaceSlot(slot, mod.craneGameVariant, slot.InitSeed, false)
         end
-      elseif slot.Variant == 3 then -- fortune telling machine
+      elseif slot.Variant == mod.fortuneTellingVariant then
         if rng:RandomInt(100) < mod.state.fortunePercent then
-          mod:replaceSlot(slot, mod.craneGame, slot.InitSeed, false)
+          mod:replaceSlot(slot, mod.craneGameVariant, slot.InitSeed, false)
         end
-      elseif slot.Variant == 6 then -- shell game
+      elseif slot.Variant == mod.shellGameVariant then
         if rng:RandomInt(100) < mod.state.shellGamePercent then
-          mod:replaceSlot(slot, mod.craneGame, slot.InitSeed, false)
+          mod:replaceSlot(slot, mod.craneGameVariant, slot.InitSeed, false)
         end
+      end
+    end
+  end
+end
+
+function mod:onPreGetCollectible(itemPoolType, decrease, seed)
+  if itemPoolType == ItemPoolType.POOL_CRANE_GAME and mod.state.itemPoolType ~= ItemPoolType.POOL_CRANE_GAME then
+    for _, crane in ipairs(Isaac.FindByType(EntityType.ENTITY_SLOT, mod.craneGameVariant, -1, true, false)) do
+      if crane.DropSeed == seed then
+        local itemPool = game:GetItemPool()
+        return itemPool:GetCollectible(mod.state.itemPoolType, false, seed, CollectibleType.COLLECTIBLE_BUDDY_IN_A_BOX) -- false rather than decrease/true gives better d6 behavior
+      end
+    end
+  end
+end
+
+-----------------
+-- Vanilla API --
+-----------------
+-- this callback (and the pre version) can override the collectible
+-- it can't be 100% trusted, but it's the best we have
+-- this won't be called if the player has tmtrainer (glitched items)
+function mod:onPostGetCollectible(collectible, itemPoolType, decrease, seed)
+  if itemPoolType == mod.state.itemPoolType then
+    for _, crane in ipairs(Isaac.FindByType(EntityType.ENTITY_SLOT, mod.craneGameVariant, -1, true, false)) do
+      if crane.DropSeed == seed then
+        mod:updateCraneItemsAfterSelection(crane, collectible)
+        break
       end
     end
   end
@@ -157,7 +188,12 @@ end
 
 function mod:onUpdate()
   -- this is ugly but slot machines don't have very good api support
-  for _, crane in ipairs(Isaac.FindByType(EntityType.ENTITY_SLOT, mod.craneGame, -1, true, false)) do
+  for _, crane in ipairs(Isaac.FindByType(EntityType.ENTITY_SLOT, mod.craneGameVariant, -1, true, false)) do
+    -- State : Animation
+    -- 1 : Idle
+    -- 2 : Initiate, Wiggle, NoPrize, Prize, Regenerate
+    -- 3 : Death, Broken
+    -- 4 : OutOfPrizes
     local sprite = crane:GetSprite()
     
     if sprite:IsPlaying('Idle') or sprite:IsPlaying('Regenerate') then
@@ -180,69 +216,56 @@ function mod:onUpdate()
         mod.state.craneItems[tostring(crane.InitSeed)] = nil
       end
     elseif sprite:IsPlaying('Broken') then -- IsEventTriggered('Explosion') doesn't work for all cases
-      local craneItem = mod.state.craneItems[tostring(crane.InitSeed)]
-      
-      if craneItem then
-        local rng = RNG()
-        rng:SetSeed(crane.InitSeed, mod.rngShiftIdx)
-        
-        if rng:RandomInt(100) < mod.state.bombPercent then
-          local entity = Isaac.Spawn(EntityType.ENTITY_PICKUP, PickupVariant.PICKUP_COLLECTIBLE, craneItem, crane.Position, Vector.Zero, nil)
-          entity.TargetPosition = crane.TargetPosition
-          
-          -- there isn't a built-in collectible base for crane games: entity:GetSprite():SetOverlayFrame('Alternates', x)
-          -- you could probably add one, but i like the way this currently looks: normal base + broken crane game
-          
-          if rng:RandomInt(100) < mod.state.glitchPercent then
-            entity:AddEntityFlags(EntityFlag.FLAG_GLITCH)
-          end
-        end
-        
-        mod.state.craneItems[tostring(crane.InitSeed)] = nil
-      end
+      -- this can be delayed during a payout
+      -- the bomb will act on the next item put in the crane game
+      mod:payOutWhenBombed(crane)
     end
   end
+end
+------------------
+-- /Vanilla API --
+------------------
+
+--------------------
+-- Repentogon API --
+--------------------
+-- filtered to CRANE_GAME
+-- called after: MC_POST_GET_COLLECTIBLE/MC_PRE_SLOT_SET_PRIZE_COLLECTIBLE/SetPrizeCollectible
+-- called when you re-enter rooms w/ crane games, works with tmtrainer
+function mod:onPostSlotSetPrizeCollectible(entitySlot, collectible)
+  mod:updateCraneItemsAfterSelection(entitySlot, collectible)
 end
 
-function mod:onPreGetCollectible(itemPoolType, decrease, seed)
-  if itemPoolType == ItemPoolType.POOL_CRANE_GAME and mod.state.itemPoolType ~= ItemPoolType.POOL_CRANE_GAME then
-    for _, crane in ipairs(Isaac.FindByType(EntityType.ENTITY_SLOT, mod.craneGame, -1, true, false)) do
-      if crane.DropSeed == seed then
-        local itemPool = game:GetItemPool()
-        return itemPool:GetCollectible(mod.state.itemPoolType, false, seed, CollectibleType.COLLECTIBLE_BUDDY_IN_A_BOX) -- false rather than decrease/true gives better d6 behavior
-      end
-    end
+-- filtered to CRANE_GAME
+function mod:onPreSlotCreateExplosionDrops(entitySlot)
+  -- State : Animation
+  -- 1 : Death
+  -- 3 : Idle, Wiggle, NoPrize, Prize, Regenerate
+  -- 4 : OutOfPrizes
+  local state = entitySlot:GetState()
+  local animation = entitySlot:GetSprite():GetAnimation()
+  
+  -- bomb, not paying out a prize (Wiggle could become Prize or NoPrize)
+  if state == 3 and not (animation == 'Wiggle' or animation == 'Prize') then
+    mod:payOutWhenBombed(entitySlot)
+    
+    -- stops extra drops from spawning
+    -- blocks MC_POST_SLOT_CREATE_EXPLOSION_DROPS
+    --return false
   end
+  
+  mod.state.craneItems[tostring(entitySlot.InitSeed)] = nil
 end
-
--- this callback (and the pre version) can override the collectible
--- it can't be 100% trusted, but it's the best we have
--- this won't be called if the player has tmtrainer (glitched items)
-function mod:onPostGetCollectible(collectible, itemPoolType, decrease, seed)
-  if itemPoolType == mod.state.itemPoolType then
-    for _, crane in ipairs(Isaac.FindByType(EntityType.ENTITY_SLOT, mod.craneGame, -1, true, false)) do
-      if crane.DropSeed == seed then
-        -- seed should be unique enough
-        mod.state.craneItems[tostring(crane.InitSeed)] = collectible
-        mod.state.craneItems[crane.InitSeed .. '|' .. crane.DropSeed] = collectible
-        
-        -- if we changed the item pool type, let eid know about it
-        if itemPoolType ~= ItemPoolType.POOL_CRANE_GAME then
-          mod:updateEid(crane.InitSeed, collectible)
-        end
-        
-        break
-      end
-    end
-  end
-end
+---------------------
+-- /Repentogon API --
+---------------------
 
 -- filtered to: COLLECTIBLE_D6, COLLECTIBLE_ETERNAL_D6
 -- this will also trigger for other items that use these: d100, perthro, etc
 function mod:onUseItem(collectible, rng, player, useFlags, activeSlot, varData)
   -- block 2nd roll from car battery which can cause multiple crane games to spawn (glitch/lag)
   if mod.state.enableReroll and not (useFlags & UseFlag.USE_CARBATTERY == UseFlag.USE_CARBATTERY) then
-    for _, crane in ipairs(Isaac.FindByType(EntityType.ENTITY_SLOT, mod.craneGame, -1, true, false)) do
+    for _, crane in ipairs(Isaac.FindByType(EntityType.ENTITY_SLOT, mod.craneGameVariant, -1, true, false)) do
       local sprite = crane:GetSprite()
       
       if sprite:IsPlaying('Idle') then
@@ -256,6 +279,7 @@ function mod:onUseItem(collectible, rng, player, useFlags, activeSlot, varData)
           sprite:Play('Death', true) -- OutOfPrizes takes too long, you can still spend another 5c
         else
           -- Play('Regenerate') doesn't work
+          craneRng:SetSeed(crane.InitSeed, mod.rngShiftIdx)
           mod:replaceSlot(crane, crane.Variant, craneRng:Next(), true)
         end
       end
@@ -268,13 +292,12 @@ function mod:onUseCard(card, player, useFlags)
   -- block tarot cloth which causes issues (related to removing/spawning, there's no morph here)
   if not (useFlags & UseFlag.USE_CARBATTERY == UseFlag.USE_CARBATTERY) then
     for _, slot in ipairs(Isaac.FindByType(EntityType.ENTITY_SLOT, -1, -1, false, false)) do
-      -- slot machine or fortune teller
-      if (slot.Variant == 1 or slot.Variant == 3) and slot.FrameCount == 0 then
+      if (slot.Variant == mod.slotMachineVariant or slot.Variant == mod.fortuneTellingVariant) and slot.FrameCount == 0 then
         local rng = RNG()
         rng:SetSeed(slot.InitSeed, mod.rngShiftIdx)
         
         if rng:RandomInt(100) < mod.state.wheelOfFortunePercent then
-          mod:replaceSlot(slot, mod.craneGame, slot.InitSeed, true)
+          mod:replaceSlot(slot, mod.craneGameVariant, slot.InitSeed, true)
         end
       end
     end
@@ -293,13 +316,52 @@ function mod:replaceSlot(slot, variant, seed, appear)
     else
       entity:ClearEntityFlags(EntityFlag.FLAG_APPEAR)
     end
+    
+    -- if repentogon: don't allow more than 3 wins when re-rolling
+    if REPENTOGON and slot.Variant == SlotVariant.CRANE_GAME and entity.Variant == SlotVariant.CRANE_GAME then
+      entity:ToSlot():SetDonationValue(slot:ToSlot():GetDonationValue())
+    end
+    
     entity:Update() -- otherwise sad onion is shown for a split second
   end
 end
 
-function mod:updateEid(seed, collectible)
+function mod:payOutWhenBombed(crane)
+  local craneItem = mod.state.craneItems[tostring(crane.InitSeed)]
+  
+  if craneItem then
+    local rng = RNG()
+    rng:SetSeed(crane.InitSeed, mod.rngShiftIdx)
+    
+    if rng:RandomInt(100) < mod.state.bombPercent then
+      local entity = Isaac.Spawn(EntityType.ENTITY_PICKUP, PickupVariant.PICKUP_COLLECTIBLE, craneItem, crane.Position, Vector.Zero, nil)
+      entity.TargetPosition = crane.TargetPosition
+      
+      -- there isn't a built-in collectible base for crane games: entity:GetSprite():SetOverlayFrame('Alternates', x)
+      -- you could probably add one, but i like the way this currently looks: normal base + broken crane game
+      
+      if rng:RandomInt(100) < mod.state.glitchPercent then
+        entity:AddEntityFlags(EntityFlag.FLAG_GLITCH)
+      end
+    end
+    
+    mod.state.craneItems[tostring(crane.InitSeed)] = nil
+  end
+end
+
+function mod:updateCraneItemsAfterSelection(crane, collectible)
+  -- seed should be unique enough
+  mod.state.craneItems[tostring(crane.InitSeed)] = collectible
+  mod.state.craneItems[crane.InitSeed .. '|' .. crane.DropSeed] = collectible
+  
+  -- let eid know about the item
+  mod:updateEid(crane, collectible)
+end
+
+function mod:updateEid(crane, collectible)
   if EID then
-    EID.CraneItemType[tostring(seed)] = collectible
+    EID.CraneItemType[tostring(crane.InitSeed)] = collectible
+    EID.CraneItemType[crane.InitSeed .. 'Drop' .. crane.DropSeed] = collectible
   end
 end
 
@@ -413,9 +475,14 @@ end
 mod:AddCallback(ModCallbacks.MC_POST_GAME_STARTED, mod.onGameStart)
 mod:AddCallback(ModCallbacks.MC_PRE_GAME_EXIT, mod.onGameExit)
 mod:AddCallback(ModCallbacks.MC_POST_NEW_ROOM, mod.onNewRoom)
-mod:AddCallback(ModCallbacks.MC_POST_UPDATE, mod.onUpdate)
-mod:AddCallback(ModCallbacks.MC_PRE_GET_COLLECTIBLE, mod.onPreGetCollectible)
-mod:AddCallback(ModCallbacks.MC_POST_GET_COLLECTIBLE, mod.onPostGetCollectible)
+mod:AddCallback(ModCallbacks.MC_PRE_GET_COLLECTIBLE, mod.onPreGetCollectible) -- Repentogon: MC_PRE_SLOT_SET_PRIZE_COLLECTIBLE
+if REPENTOGON then
+  mod:AddCallback(ModCallbacks.MC_POST_SLOT_SET_PRIZE_COLLECTIBLE, mod.onPostSlotSetPrizeCollectible, SlotVariant.CRANE_GAME)
+  mod:AddCallback(ModCallbacks.MC_PRE_SLOT_CREATE_EXPLOSION_DROPS, mod.onPreSlotCreateExplosionDrops, SlotVariant.CRANE_GAME)
+else
+  mod:AddCallback(ModCallbacks.MC_POST_GET_COLLECTIBLE, mod.onPostGetCollectible)
+  mod:AddCallback(ModCallbacks.MC_POST_UPDATE, mod.onUpdate)
+end
 mod:AddCallback(ModCallbacks.MC_USE_ITEM, mod.onUseItem, CollectibleType.COLLECTIBLE_D6)
 mod:AddCallback(ModCallbacks.MC_USE_ITEM, mod.onUseItem, CollectibleType.COLLECTIBLE_ETERNAL_D6)
 mod:AddCallback(ModCallbacks.MC_USE_CARD, mod.onUseCard, Card.CARD_WHEEL_OF_FORTUNE)
