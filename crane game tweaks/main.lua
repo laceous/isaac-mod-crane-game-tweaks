@@ -8,6 +8,7 @@ mod.fortuneTellingVariant = 3
 mod.shellGameVariant = 6
 mod.craneGameVariant = 16
 mod.rngShiftIdx = 35
+mod.craneWiggles = {}
 
 mod.itemPoolTypes = {
   [ItemPoolType.POOL_TREASURE]       = 'treasure',       -- 0
@@ -94,6 +95,7 @@ function mod:onGameExit(shouldSave)
   end
   
   mod.onGameStartHasRun = false
+  mod:clearCraneWiggles()
 end
 
 function mod:save(settingsOnly)
@@ -127,6 +129,12 @@ function mod:clearCraneItems()
   end
 end
 
+function mod:clearCraneWiggles()
+  for k, _ in pairs(mod.craneWiggles) do
+    mod.craneWiggles[k] = nil
+  end
+end
+
 -- not using MC_PRE_ROOM_ENTITY_SPAWN because it doesn't work with custom stage api rooms
 -- not using MC_PRE_ENTITY_SPAWN because allowing the option to change percentages along with re-entering rooms leads to inconsistent behavior
 function mod:onNewRoom()
@@ -135,6 +143,7 @@ function mod:onNewRoom()
   end
   
   local room = game:GetRoom()
+  mod:clearCraneWiggles()
   
   if room:IsFirstVisit() then
     for _, slot in ipairs(Isaac.FindByType(EntityType.ENTITY_SLOT, -1, -1, false, false)) do
@@ -245,16 +254,44 @@ function mod:onPreSlotCreateExplosionDrops(entitySlot)
   local state = entitySlot:GetState()
   local animation = entitySlot:GetSprite():GetAnimation()
   
-  -- bomb, not paying out a prize (Wiggle could become Prize or NoPrize)
-  if state == 3 and not (animation == 'Wiggle' or animation == 'Prize') then
-    mod:payOutWhenBombed(entitySlot)
-    
-    -- stops extra drops from spawning
-    -- blocks MC_POST_SLOT_CREATE_EXPLOSION_DROPS
-    --return false
+  -- bomb, not paying out a prize
+  if state == 3 and animation ~= 'Prize' then
+    if animation == 'Wiggle' then -- could be Prize or NoPrize
+      mod.craneWiggles[GetPtrHash(entitySlot)] = mod.state.craneItems[tostring(entitySlot.InitSeed)]
+    else
+      mod:payOutWhenBombed(entitySlot)
+      
+      -- stops extra drops from spawning
+      -- blocks MC_POST_SLOT_CREATE_EXPLOSION_DROPS
+      --return false
+    end
   end
   
   mod.state.craneItems[tostring(entitySlot.InitSeed)] = nil
+end
+
+function mod:onSlotUpdate(entitySlot)
+  local entitySlotHash = GetPtrHash(entitySlot)
+  local craneWiggle = mod.craneWiggles[entitySlotHash]
+  
+  if craneWiggle then
+    local state = entitySlot:GetState()
+    local animation = entitySlot:GetSprite():GetAnimation()
+    
+    if state == 3 then
+      if animation == 'Wiggle' then
+        -- nothing to do yet
+      elseif animation == 'NoPrize' then
+        mod.state.craneItems[tostring(entitySlot.InitSeed)] = craneWiggle
+        mod:payOutWhenBombed(entitySlot)
+        mod.craneWiggles[entitySlotHash] = nil
+      else -- Prize
+        mod.craneWiggles[entitySlotHash] = nil
+      end
+    else
+      mod.craneWiggles[entitySlotHash] = nil
+    end
+  end
 end
 ---------------------
 -- /Repentogon API --
@@ -349,6 +386,7 @@ function mod:payOutWhenBombed(crane)
   end
 end
 
+-- potential repentogon update: use GetPtrHash(crane) instead of InitSeed
 function mod:updateCraneItemsAfterSelection(crane, collectible)
   -- seed should be unique enough
   mod.state.craneItems[tostring(crane.InitSeed)] = collectible
@@ -479,6 +517,7 @@ mod:AddCallback(ModCallbacks.MC_PRE_GET_COLLECTIBLE, mod.onPreGetCollectible) --
 if REPENTOGON then
   mod:AddCallback(ModCallbacks.MC_POST_SLOT_SET_PRIZE_COLLECTIBLE, mod.onPostSlotSetPrizeCollectible, SlotVariant.CRANE_GAME)
   mod:AddCallback(ModCallbacks.MC_PRE_SLOT_CREATE_EXPLOSION_DROPS, mod.onPreSlotCreateExplosionDrops, SlotVariant.CRANE_GAME)
+  mod:AddCallback(ModCallbacks.MC_POST_SLOT_UPDATE, mod.onSlotUpdate, SlotVariant.CRANE_GAME)
 else
   mod:AddCallback(ModCallbacks.MC_POST_GET_COLLECTIBLE, mod.onPostGetCollectible)
   mod:AddCallback(ModCallbacks.MC_POST_UPDATE, mod.onUpdate)
