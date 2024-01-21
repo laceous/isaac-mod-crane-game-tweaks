@@ -270,6 +270,7 @@ function mod:onPreSlotCreateExplosionDrops(entitySlot)
   mod.state.craneItems[tostring(entitySlot.InitSeed)] = nil
 end
 
+-- filtered to CRANE_GAME
 function mod:onSlotUpdate(entitySlot)
   local entitySlotHash = GetPtrHash(entitySlot)
   local craneWiggle = mod.craneWiggles[entitySlotHash]
