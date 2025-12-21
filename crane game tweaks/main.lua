@@ -58,6 +58,7 @@ mod.state.wheelOfFortunePercent = 0
 mod.state.itemPoolType = ItemPoolType.POOL_CRANE_GAME
 mod.state.enableReroll = false
 mod.state.displayNumNickels = false
+mod.state.displayNumNickelsAlgo = 1
 mod.state.craneItems = {}
 
 function mod:onGameStart(isContinue)
@@ -84,6 +85,9 @@ function mod:onGameStart(isContinue)
         if type(state[v]) == 'boolean' then
           mod.state[v] = state[v]
         end
+      end
+      if math.type(state.displayNumNickelsAlgo) == 'integer' and state.displayNumNickelsAlgo >= 1 and state.displayNumNickelsAlgo <= 2 then
+        mod.state.displayNumNickelsAlgo = state.displayNumNickelsAlgo
       end
     end
   end
@@ -124,6 +128,7 @@ function mod:save(settingsOnly)
     state.itemPoolType = mod.state.itemPoolType
     state.enableReroll = mod.state.enableReroll
     state.displayNumNickels = mod.state.displayNumNickels
+    state.displayNumNickelsAlgo = mod.state.displayNumNickelsAlgo
     
     mod:SaveData(json.encode(state))
   else
@@ -359,17 +364,40 @@ function mod:onRender()
     if v.FrameCount > 0 then
       local animation = v:GetSprite():GetAnimation()
       if animation ~= 'Prize' and animation ~= 'OutOfPrizes' and animation ~= 'Death' and animation ~= 'Broken' then
-        local rng = RNG()
-        rng:SetSeed(v.DropSeed, REPENTOGON and v:GetDropRNG():GetShiftIdx() or 30) -- shiftIdx found with rgon
-        local count = 0
-        local randInt = -1
-        while randInt ~= 0 do -- todo: limit this? 16 is the max i've seen so far
-          randInt = rng:RandomInt(4)
-          count = count + 1
-        end
-        
         local pos = Isaac.WorldToScreen(v.Position)
-        local txt = tostring(count)
+        local txt = nil
+        
+        if mod.state.displayNumNickelsAlgo == 1 then
+          local rng = RNG()
+          rng:SetSeed(v.DropSeed, REPENTOGON and v:GetDropRNG():GetShiftIdx() or 30) -- shiftIdx found with rgon
+          local count = 0
+          local randInt = 4
+          while randInt > 0 do -- todo: limit this? 16 is the max i've seen so far
+            randInt = rng:RandomInt(4) -- 0-3
+            count = count + 1
+          end
+          txt = tostring(count)
+        else -- 2
+          for i = 1, 2 do
+            local rng = RNG()
+            rng:SetSeed(v.DropSeed, REPENTOGON and v:GetDropRNG():GetShiftIdx() or 30)
+            local count = 0
+            local randInt = 100
+            while randInt >= (i == 1 and 25 or 30) do
+              randInt = rng:RandomInt(100) -- 0-99
+              count = count + 1
+            end
+            if i == 1 then
+              txt = count
+            else -- 2
+              if txt == count then
+                txt = tostring(txt)
+              else
+                txt = txt .. '(' .. count .. ')' -- second number is with poker chip
+              end
+            end
+          end
+        end
         
         if game:GetRoom():IsMirrorWorld() then
           local wtrp320x280 = Isaac.WorldToRenderPosition(Vector(320, 280)) -- center pos normal room, WorldToRenderPosition makes this work in large rooms too
@@ -446,29 +474,9 @@ end
 
 -- start ModConfigMenu --
 function mod:setupModConfigMenu()
-  for _, v in ipairs({ 'Settings', 'Advanced' }) do
+  for _, v in ipairs({ 'Settings', 'Advanced', 'Nickels' }) do
     ModConfigMenu.RemoveSubcategory(mod.Name, v)
   end
-  ModConfigMenu.AddText(mod.Name, 'Settings', 'Display number of nickels required:')
-  ModConfigMenu.AddSetting(
-    mod.Name,
-    'Settings',
-    {
-      Type = ModConfigMenu.OptionType.BOOLEAN,
-      CurrentSetting = function()
-        return mod.state.displayNumNickels
-      end,
-      Display = function()
-        return (mod.state.displayNumNickels and 'enabled' or 'disabled')
-      end,
-      OnChange = function(b)
-        mod.state.displayNumNickels = b
-        mod:save(true)
-      end,
-      Info = { 'Default: disabled' }
-    }
-  )
-  ModConfigMenu.AddSpace(mod.Name, 'Settings')
   ModConfigMenu.AddText(mod.Name, 'Settings', 'Pull items from which pool:')
   ModConfigMenu.AddSetting(
     mod.Name,
@@ -568,6 +576,47 @@ function mod:setupModConfigMenu()
       }
     )
   end
+  ModConfigMenu.AddText(mod.Name, 'Nickels', 'Display number of nickels required:')
+  ModConfigMenu.AddSetting(
+    mod.Name,
+    'Nickels',
+    {
+      Type = ModConfigMenu.OptionType.BOOLEAN,
+      CurrentSetting = function()
+        return mod.state.displayNumNickels
+      end,
+      Display = function()
+        return (mod.state.displayNumNickels and 'enabled' or 'disabled')
+      end,
+      OnChange = function(b)
+        mod.state.displayNumNickels = b
+        mod:save(true)
+      end,
+      Info = { 'Default: disabled' }
+    }
+  )
+  ModConfigMenu.AddSpace(mod.Name, 'Nickels')
+  ModConfigMenu.AddText(mod.Name, 'Nickels', 'Choose the algorithm for your version:')
+  ModConfigMenu.AddSetting(
+    mod.Name,
+    'Nickels',
+    {
+      Type = ModConfigMenu.OptionType.NUMBER,
+      CurrentSetting = function()
+        return mod.state.displayNumNickelsAlgo
+      end,
+      Minimum = 1,
+      Maximum = 2,
+      Display = function()
+        return 'algorithm ' .. mod.state.displayNumNickelsAlgo
+      end,
+      OnChange = function(n)
+        mod.state.displayNumNickelsAlgo = n
+        mod:save(true)
+      end,
+      Info = { '1: Used in rep thru rep+ 1.9.7.12', '2: Used in rep+ 1.9.7.13 and beyond' }
+    }
+  )
 end
 -- end ModConfigMenu --
 

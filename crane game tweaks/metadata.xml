@@ -20,8 +20,8 @@ Mod Config Menu is required to change your settings.
 
 Finally, there's an option to enable re-rolling crane game items (as long as the machine is idle). The D6 and Eternal D6 are both supported (as are any other items that call these, like: D100, Perthro, Restock Machine, etc). The Eternal D6 has a 25% chance to break the machine. The only way to re-roll these items is to completely replace the machine. This resets the internal counter which normally limits you to 3 items. Due to this change in behavior, re-rolling is disabled by default. (Update: With Repentogon, you'll still be limited to 3 items.)
 
-Update: There's a new option to display the number of nickels required to get the item. This works on the latest version of Rep and Rep+ 1.9.7.12 (which is what rgon is currently targeting). It doesn't work correctly on the latest version of vanilla Rep+ (1.9.7.15).</description>
-    <version>1.8</version>
+Update: There's a new option to display the number of nickels required to get the item. Make sure to set the appropriate algorithm! The behavior appears to have changed in Rep+ 1.9.7.13. Sometimes you'll get a second number in parentheses with algorithm 2. This applies when holding the poker chip trinket.</description>
+    <version>1.9</version>
     <visibility>Public</visibility>
     <tag id="Lua"/>
     <tag id="Tweaks"/>
