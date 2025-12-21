@@ -364,7 +364,7 @@ function mod:onRender()
         local count = 0
         local randInt = -1
         while randInt ~= 0 do -- todo: limit this? 16 is the max i've seen so far
-          randInt = rng:RandomInt(4) -- the wiki says this is a 25% chance, but testing shows 20% (0-4 = 5 options = 20%)
+          randInt = rng:RandomInt(4)
           count = count + 1
         end
         
