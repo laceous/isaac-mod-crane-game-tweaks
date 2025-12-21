@@ -10,6 +10,10 @@ mod.craneGameVariant = 16
 mod.rngShiftIdx = 35
 mod.craneWiggles = {}
 
+mod.font = Font()
+mod.font:Load('font/upheavalmini.fnt') -- font/luaminioutlined.fnt
+mod.kcolor = KColor(1,1,1,1) -- white
+
 mod.itemPoolTypes = {
   [ItemPoolType.POOL_TREASURE]       = 'treasure',       -- 0
   [ItemPoolType.POOL_SHOP]           = 'shop',           -- 1
@@ -53,6 +57,7 @@ mod.state.shellGamePercent = 0
 mod.state.wheelOfFortunePercent = 0
 mod.state.itemPoolType = ItemPoolType.POOL_CRANE_GAME
 mod.state.enableReroll = false
+mod.state.displayNumNickels = false
 mod.state.craneItems = {}
 
 function mod:onGameStart(isContinue)
@@ -75,8 +80,10 @@ function mod:onGameStart(isContinue)
       if math.type(state.itemPoolType) == 'integer' and state.itemPoolType >= 0 and state.itemPoolType < ItemPoolType.NUM_ITEMPOOLS then
         mod.state.itemPoolType = state.itemPoolType
       end
-      if type(state.enableReroll) == 'boolean' then
-        mod.state.enableReroll = state.enableReroll
+      for _, v in ipairs({ 'enableReroll', 'displayNumNickels' }) do
+        if type(state[v]) == 'boolean' then
+          mod.state[v] = state[v]
+        end
       end
     end
   end
@@ -116,6 +123,7 @@ function mod:save(settingsOnly)
     state.wheelOfFortunePercent = mod.state.wheelOfFortunePercent
     state.itemPoolType = mod.state.itemPoolType
     state.enableReroll = mod.state.enableReroll
+    state.displayNumNickels = mod.state.displayNumNickels
     
     mod:SaveData(json.encode(state))
   else
@@ -342,6 +350,38 @@ function mod:onUseCard(card, player, useFlags)
   end
 end
 
+function mod:onRender()
+  if not mod.state.displayNumNickels then
+    return
+  end
+  
+  for _, v in ipairs(Isaac.FindByType(EntityType.ENTITY_SLOT, mod.craneGameVariant, -1, false, false)) do
+    if v.FrameCount > 0 then
+      local animation = v:GetSprite():GetAnimation()
+      if animation ~= 'Prize' and animation ~= 'OutOfPrizes' and animation ~= 'Death' and animation ~= 'Broken' then
+        local rng = RNG()
+        rng:SetSeed(v.DropSeed, REPENTOGON and v:GetDropRNG():GetShiftIdx() or 30) -- shiftIdx found with rgon
+        local count = 0
+        local randInt = -1
+        while randInt ~= 0 do -- todo: limit this? 16 is the max i've seen so far
+          randInt = rng:RandomInt(4) -- the wiki says this is a 25% chance, but testing shows 20% (0-4 = 5 options = 20%)
+          count = count + 1
+        end
+        
+        local pos = Isaac.WorldToScreen(v.Position)
+        local txt = tostring(count)
+        
+        if game:GetRoom():IsMirrorWorld() then
+          local wtrp320x280 = Isaac.WorldToRenderPosition(Vector(320, 280)) -- center pos normal room, WorldToRenderPosition makes this work in large rooms too
+          mod.font:DrawString(txt, wtrp320x280.X*2 - pos.X - mod.font:GetStringWidth(txt)/2, pos.Y, mod.kcolor, 0, true)
+        else
+          mod.font:DrawString(txt, pos.X - mod.font:GetStringWidth(txt)/2, pos.Y, mod.kcolor, 0, true)
+        end
+      end
+    end
+  end
+end
+
 function mod:replaceSlot(slot, variant, seed, appear)
   -- check exists just in case replaceSlot gets called twice in the same frame
   if slot:Exists() then
@@ -409,6 +449,26 @@ function mod:setupModConfigMenu()
   for _, v in ipairs({ 'Settings', 'Advanced' }) do
     ModConfigMenu.RemoveSubcategory(mod.Name, v)
   end
+  ModConfigMenu.AddText(mod.Name, 'Settings', 'Display number of nickels required:')
+  ModConfigMenu.AddSetting(
+    mod.Name,
+    'Settings',
+    {
+      Type = ModConfigMenu.OptionType.BOOLEAN,
+      CurrentSetting = function()
+        return mod.state.displayNumNickels
+      end,
+      Display = function()
+        return (mod.state.displayNumNickels and 'enabled' or 'disabled')
+      end,
+      OnChange = function(b)
+        mod.state.displayNumNickels = b
+        mod:save(true)
+      end,
+      Info = { 'Default: disabled' }
+    }
+  )
+  ModConfigMenu.AddSpace(mod.Name, 'Settings')
   ModConfigMenu.AddText(mod.Name, 'Settings', 'Pull items from which pool:')
   ModConfigMenu.AddSetting(
     mod.Name,
@@ -526,6 +586,7 @@ end
 mod:AddCallback(ModCallbacks.MC_USE_ITEM, mod.onUseItem, CollectibleType.COLLECTIBLE_D6)
 mod:AddCallback(ModCallbacks.MC_USE_ITEM, mod.onUseItem, CollectibleType.COLLECTIBLE_ETERNAL_D6)
 mod:AddCallback(ModCallbacks.MC_USE_CARD, mod.onUseCard, Card.CARD_WHEEL_OF_FORTUNE)
+mod:AddPriorityCallback(ModCallbacks.MC_POST_RENDER, CallbackPriority.EARLY, mod.onRender) -- display under mcm
 
 if ModConfigMenu then
   mod:setupModConfigMenu()
