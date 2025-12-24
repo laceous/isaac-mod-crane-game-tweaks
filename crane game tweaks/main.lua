@@ -268,7 +268,7 @@ function mod:onPreSlotCreateExplosionDrops(entitySlot)
   local animation = entitySlot:GetSprite():GetAnimation()
   
   -- bomb, not paying out a prize
-  if state == 3 and animation ~= 'Prize' then
+  if state == 3 and animation ~= 'Prize' then -- SlotState.DESTROYED
     if animation == 'Wiggle' then -- could be Prize or NoPrize
       mod.craneWiggles[GetPtrHash(entitySlot)] = mod.state.craneItems[tostring(entitySlot.InitSeed)]
     else
@@ -292,7 +292,7 @@ function mod:onSlotUpdate(entitySlot)
     local state = entitySlot:GetState()
     local animation = entitySlot:GetSprite():GetAnimation()
     
-    if state == 3 then
+    if state == 3 then -- SlotState.DESTROYED
       if animation == 'Wiggle' then
         -- nothing to do yet
       elseif animation == 'NoPrize' then
